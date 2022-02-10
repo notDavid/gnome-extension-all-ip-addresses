@@ -8,8 +8,10 @@ const Clutter = imports.gi.Clutter;
 const GLib = imports.gi.GLib;
 const ShellToolkit = imports.gi.St;
 
-// Start with IPv4 LAN address as default
-var type=4;
+const regexIp4and6 = /((^\s*((([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]))\s*$)|(^\s*((([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:))|(([0-9A-Fa-f]{1,4}:){6}(:[0-9A-Fa-f]{1,4}|((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})|:))|(([0-9A-Fa-f]{1,4}:){5}(((:[0-9A-Fa-f]{1,4}){1,2})|:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})|:))|(([0-9A-Fa-f]{1,4}:){4}(((:[0-9A-Fa-f]{1,4}){1,3})|((:[0-9A-Fa-f]{1,4})?:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){3}(((:[0-9A-Fa-f]{1,4}){1,4})|((:[0-9A-Fa-f]{1,4}){0,2}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){2}(((:[0-9A-Fa-f]{1,4}){1,5})|((:[0-9A-Fa-f]{1,4}){0,3}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){1}(((:[0-9A-Fa-f]{1,4}){1,6})|((:[0-9A-Fa-f]{1,4}){0,4}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(:(((:[0-9A-Fa-f]{1,4}){1,7})|((:[0-9A-Fa-f]{1,4}){0,5}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:)))(%.+)?\s*$))/;
+
+// Start with IPv4 WAN address as default
+var type=24;
 
 function _get_lan_ip4() {
     // Ask the IP stack what route would be used to reach 1.1.1.1 (Cloudflare DNS)
@@ -70,10 +72,14 @@ function _get_lan_ip6() {
     return lanIpAddress;
 }
 
-function _get_wan_ip4() {
-    // Use the google dns servers to find the publip ip address used for requests
-    // Force a ipv4 conection, because ipv6 won't be NAT'ed
-    var command_output_bytes = GLib.spawn_command_line_sync('dig TXT +short o-o.myaddr.l.google.com @ns1.google.com -4')[1];
+function _get_wan_ip(ipVersion) {
+    var url;
+    if (ipVersion == '4') {
+        url = 'https://ip4.anysrc.net/plain/clientip';
+    } else {
+        url = 'https://ip6.anysrc.net/plain/clientip';
+    }
+    var command_output_bytes = GLib.spawn_command_line_sync(`curl -sS ${url}`)[1];
     var command_output_string = '';
 
     for (var current_character_index = 0;
@@ -84,8 +90,8 @@ function _get_wan_ip4() {
         command_output_string += current_character;
     }
     command_output_string=command_output_string.replace('"','').replace('"','').replace('\n','');
-    // Validate the result looks like an ipv4 address
-    var Re = new RegExp(/.*\..*\..*\..*/g);
+    // Validate the result looks like an ipv4 or ipv6 address
+    var Re = new RegExp(regexIp4and6);
     var matches = command_output_string.match(Re);
     var wanIpAddress;
     if (matches) {
@@ -118,13 +124,15 @@ const AllIpAddressesIndicator = new Lang.Class({
                 this._timeout = null;
         }
         this._timeout = Mainloop.timeout_add_seconds(refreshTime, Lang.bind(this, this._updateLabel));
-        // Show the right format. 0 = WAN, 4 = IPv4, 6=IPv6
-        if (type===4) {
-            this.buttonText.set_text("LAN: "+_get_lan_ip4());
-        } else if (type===0) {
-            this.buttonText.set_text("WAN: "+_get_wan_ip4());
-        } else {
-            this.buttonText.set_text("IP6: "+_get_lan_ip6());
+        // Show the right format
+        if (type===14) {
+            this.buttonText.set_text("LAN4: "+_get_lan_ip4());            
+        } else if (type===16) {
+            this.buttonText.set_text("LAN6: "+_get_lan_ip6());
+        } else if (type===24) {
+            this.buttonText.set_text("WAN4: "+_get_wan_ip('4'));
+        } else {  // if (type===26) {
+            this.buttonText.set_text("WAN6: "+_get_wan_ip('6'));
         }
     },
 
@@ -153,7 +161,7 @@ function init() {
 function enable() {
     log('All IP Addresses extension enabled');
     _indicator = new AllIpAddressesIndicator();
-	Main.panel.addToStatusArea('all-ip-addresses-indicator', _indicator);
+    Main.panel.addToStatusArea('all-ip-addresses-indicator', _indicator);
     _indicator.connect('button-press-event', _toggle);
 }
 
@@ -164,12 +172,14 @@ function disable() {
 }
 
 function _toggle() {
-    if (type===4) {
-        type=6;
-    } else if (type===6) {
-        type=0;
+    if (type===14) {
+        type=16;
+    } else if (type===16) {
+        type=24;
+    } else if (type===24) {
+        type=26;
     } else {
-        type=4;
+        type=14;
     }
     _indicator._updateLabel();
 }
