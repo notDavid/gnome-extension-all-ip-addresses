@@ -73,13 +73,7 @@ function _get_lan_ip6() {
 }
 
 function _get_wan_ip(ipVersion) {
-    var url;
-    if (ipVersion == '4') {
-        url = 'https://ip4.anysrc.net/plain/clientip';
-    } else {
-        url = 'https://ip6.anysrc.net/plain/clientip';
-    }
-    var command_output_bytes = GLib.spawn_command_line_sync(`curl -sS ${url}`)[1];
+    var command_output_bytes = GLib.spawn_command_line_sync(`curl -sS https://ip${ipVersion}.anysrc.net/plain/clientip`)[1];
     var command_output_string = '';
 
     for (var current_character_index = 0;
@@ -112,7 +106,7 @@ const AllIpAddressesIndicator = new Lang.Class({
             text: 'Loading...',
             y_align: Clutter.ActorAlign.CENTER
         });
-        this.actor.add_child(this.buttonText);
+        this.add_child(this.buttonText);
         this._updateLabel();
     },
 
